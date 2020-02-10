@@ -1,0 +1,11 @@
+td.departure_time, td.status{
+    width: 15%;
+}
+
+td.destination{
+    width: 50%;
+}
+
+td.train_number, td.track_number{
+    width: 10%;
+}
