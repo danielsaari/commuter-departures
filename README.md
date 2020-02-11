@@ -1,5 +1,17 @@
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+# Commuter Line Departure Board
+
+This project is created with React. It shows the departure times of all commuter lines leaving north and south stations in the next few hours.
+
+## Getting Started
+
+As this was created with `Create React App`, the easiest way to interact with this project is through `npm`. As of 2/11/2020 the requirements for running a program created with `Create React App` are `Node >= 8.10` and `npm >= 5.6`. I suggest using your favorite [package manager](https://nodejs.org/en/download/package-manager/) to install Node.js.
+
+Once you have these requirements, simply run the following commands in this directory to get started.
+1. `npm i`
+2. `npm start`
+
 ## Available Scripts
 
 In the project directory, you can run:
