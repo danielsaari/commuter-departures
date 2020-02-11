@@ -16,6 +16,7 @@ class DepartureBoard extends Component{
           baseURL: 'https://api-v3.mbta.com/'
         });
         this.state = {
+            offline: true,
             collectingDepartureData: false,
             departures: [],
             station_id: this.props.station_id,
@@ -24,39 +25,55 @@ class DepartureBoard extends Component{
     }
 
     render(){
-        return(
-            <div className="container">
-                <h2>{this.props.station_name} Commuter Rail Departures</h2>
+        // let the user know when the board cannot be trusted instead of showing out of date info
+        let departures;
+        if (this.state.offline){
+            departures =
+                <div>Offline...</div>;
+        }
+        else {
+            departures =
                 <table className="table table-striped">
                     <thead className="thead-dark">
-                        <tr>
-                            <th>Departure Time</th>
-                            <th>Destination</th>
-                            <th>Train #</th>
-                            <th>Track #</th>
-                            <th>Status</th>
-                        </tr>
+                    <tr>
+                        <th>Departure Time</th>
+                        <th>Destination</th>
+                        <th>Train #</th>
+                        <th>Track #</th>
+                        <th>Status</th>
+                    </tr>
                     </thead>
                     <tbody>
-                    {this.state.departures.slice(0,9).map((item, index) => (
-                        <ScheduledDeparture key={item.id} departure_time={item.departure_time} destination={item.destination} train={item.train} track={item.track} status={item.status}/>
+                    {this.state.departures.slice(0, 9).map((item, index) => (
+                        <ScheduledDeparture key={item.id} departure_time={item.departure_time}
+                                            destination={item.destination} train={item.train} track={item.track}
+                                            status={item.status}/>
                     ))}
                     </tbody>
-                </table>
+                </table>;
+        }
+
+        return(
+            <div id={"departure-board-" + this.props.station_id} className="container">
+                <h2>{this.props.station_name} Commuter Rail Departures</h2>
+                {departures}
             </div>
         );
     }
 
     componentDidMount() {
+        // once we load in, go fetch the routes
         this.collectCommuterLineRoutes()
     }
 
     componentWillUnmount() {
-        clearInterval(this.timer);
-        this.timer = null;
+        // clean up intervals
+        clearInterval(this.departure_polling_timer);
+        this.departure_polling_timer = null;
     }
 
     collectCommuterLineRoutes(){
+        // We collect all of the commuter line routes prior to collecting the entire schedule
         this.api.get('routes', {
             fields: {
                 'route': 'id'
@@ -69,20 +86,25 @@ class DepartureBoard extends Component{
                 ({ data }) => {
                     this.setState({routes: data.map((route) => route.id)});
                     this.collectUpcomingDepartures();
-                    this.timer = setInterval(()=> this.collectUpcomingDepartures(), 10000);
+                    clearInterval(this.departure_polling_timer);
+                    this.departure_polling_timer = setInterval(()=> this.collectUpcomingDepartures(), 10000);
                 }
             )
+            .catch((err) => {
+                this.setState({offline: true});
+                clearInterval(this.departure_polling_timer);
+                setTimeout(this.collectCommuterLineRoutes(), 5000)
+            })
     }
 
     collectUpcomingDepartures(){
+        // make sure we are only collecting data in one request at a time
         if (!this.state.collectingDepartureData) {
-            this.setState({'collectingDepartureData': true});
-            console.log('polling API');
+            this.setState({collectingDepartureData: true});
             this.api.get('schedules', {
                 filter: {
                     'direction_id': 0, //outbound per API docs
                     'stop': this.state.station_id,
-                    'max_time': '24:00',
                     'route': this.state.routes.toString()
                 },
                 include: 'prediction,trip,prediction.stop',
@@ -93,25 +115,36 @@ class DepartureBoard extends Component{
                         departures: data
                             .filter((scheduled_departure) => (DepartureBoard.shouldShowDeparture(scheduled_departure, now)))
                             .map((scheduled_departure) => this.createScheduleRowFromDepartureData(scheduled_departure)),
+                        collectingDepartureData: false,
+                        offline: false,
                     });
-                    this.setState({'collectingDepartureData': false});
-                }
-            )
+            })
+                .catch((err) => {
+                    this.setState({
+                        offline: true,
+                        collectingDepartureData: false,
+                    });
+                })
+
         }
     }
 
     createScheduleRowFromDepartureData(scheduled_departure){
+        // Gather the data we need to populate our departures table
         return({
-            'id': scheduled_departure.id,
-            'departure_time': new Date(scheduled_departure.departure_time),
-            'destination': scheduled_departure.trip.headsign,
-            'train': scheduled_departure.trip.name,
-            'track': DepartureBoard.tryGetTrackName(scheduled_departure),
-            'status': DepartureBoard.tryGetStatus(scheduled_departure)
+            id: scheduled_departure.id,
+            departure_time: new Date(scheduled_departure.departure_time),
+            destination: scheduled_departure.trip.headsign,
+            train: scheduled_departure.trip.name,
+            track: DepartureBoard.tryGetTrackName(scheduled_departure),
+            status: DepartureBoard.tryGetStatus(scheduled_departure)
         });
     }
 
     static shouldShowDeparture(scheduled_departure, current_time){
+        // filter out data that is not useful for a departures table. This includes
+        // 1. Schedules without a departure time
+        // 2. Schedules where the departure time is in the past and we don't also have a prediction to go with it
         if(
             !scheduled_departure.departure_time
             || (
@@ -128,6 +161,7 @@ class DepartureBoard extends Component{
     }
 
     static tryGetTrackName(scheduled_departure) {
+        // predictions only appear when the scheduled time is close
         if ('prediction' in scheduled_departure) {
             return scheduled_departure.prediction.stop.platform_code;
         } else {
@@ -136,6 +170,7 @@ class DepartureBoard extends Component{
     }
 
     static tryGetStatus(scheduled_departure) {
+        // predictions only appear when the scheduled time is close
         if ('prediction' in scheduled_departure) {
             return scheduled_departure.prediction.status;
         } else {
